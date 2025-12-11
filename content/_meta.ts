@@ -5,6 +5,5 @@ export default {
   'eng-components-and-modules': 'Components and Modules',
   'eng-data-model': 'Data Model',
   'eng-how-to-guides': 'How to Guides',
-  'eng-faq-troubleshooting': 'FAQ & Troubleshooting',
-
+  'eng-faq-troubleshooting': 'FAQ & Troubleshooting'
 }
