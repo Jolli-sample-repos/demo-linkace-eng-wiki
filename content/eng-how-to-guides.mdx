@@ -1,0 +1,253 @@
+---
+title: ENG - How to Guides
+---
+
+{/* Build timestamp: 1765422107998 - Forces cache invalidation */}
+
+**Last Updated:** 12/11/2025
+
+---
+
+# How-To Guides
+
+This guide provides step-by-step instructions for common development and operational tasks in LinkAce.
+
+## Set Up the Development Environment
+
+To get started with LinkAce development, you'll need Docker/Podman and Node.js installed on your system.
+
+1. Clone the repository and navigate to the project directory.
+
+2. Copy the development environment file:
+```bash
+cp .env.dev .env
+```
+
+3. Start the Docker containers:
+```bash
+docker compose up -d --build
+```
+
+4. Install PHP dependencies from within the PHP container:
+```bash
+docker compose exec -it php composer install
+```
+
+5. Generate the application key:
+```bash
+docker compose exec -it php php artisan key:generate
+```
+
+6. Install frontend dependencies and compile assets:
+```bash
+npm install
+npm run dev
+```
+
+**Expected Outcome:** The development environment will be accessible at `http://localhost:80`. The stack includes MariaDB, PostgreSQL, Redis, PHP, Caddy web server, and Buggregator for debugging.
+
+**Troubleshooting:** If ports 80, 3306, or 5432 are already in use, you'll need to stop conflicting services or modify the port mappings in `docker-compose.yml`.
+
+## Register a New User
+
+After setting up LinkAce, you need to create user accounts via the command line.
+
+1. Run the `registeruser` command with the username and email:
+```bash
+docker compose exec -it php php artisan registeruser "JohnDoe" "john@example.com"
+```
+
+2. When prompted, enter a secure password for the user.
+
+3. To create an admin user, add the `--admin` flag:
+```bash
+docker compose exec -it php php artisan registeruser "AdminUser" "admin@example.com" --admin
+```
+
+**Expected Outcome:** The command will output "User [name] registered." and the user can now log in to LinkAce.
+
+**Troubleshooting:** If you encounter validation errors (duplicate username or email), the command will prompt you to enter different values. The first user should always be created with the `--admin` flag.
+
+## Run the Test Suite
+
+LinkAce uses PHPUnit for testing. Tests are organized into multiple suites covering commands, controllers, models, and more.
+
+1. Run all tests from within the PHP container:
+```bash
+docker compose exec -it php composer run test
+```
+
+This executes `./vendor/bin/phpunit --coverage-clover test-coverage.xml`.
+
+2. To run a specific test suite, use PHPUnit directly:
+```bash
+docker compose exec -it php ./vendor/bin/phpunit --testsuite Commands
+```
+
+Available test suites: Commands, Components, Controller, Database, Helper, Middleware, Migrations, Models.
+
+**Expected Outcome:** PHPUnit will display test results with pass/fail status for each test. A coverage report is generated at `test-coverage.xml`.
+
+**Troubleshooting:** Tests use an SQLite in-memory database. If tests fail due to database issues, ensure the `database/testing.sqlite` file exists and is writable.
+
+## Run Code Linting
+
+LinkAce uses PHP_CodeSniffer with PSR-2 standards to maintain code quality.
+
+1. Run the linter from within the PHP container:
+```bash
+docker compose exec -it php composer run lint
+```
+
+This executes `./vendor/bin/phpcs --runtime-set ignore_warnings_on_exit 1`.
+
+2. The linter checks the following directories: `app/`, `database/factories/`, `database/seeders/`, and `tests/`.
+
+**Expected Outcome:** The command will output any coding standard violations found in the codebase. If no issues are found, it exits silently.
+
+**Troubleshooting:** The configuration in `phpcs.xml` excludes line length checks and camel case method name checks for test files. Warnings don't cause the command to exit with an error code.
+
+## Compile Frontend Assets
+
+LinkAce uses Laravel Mix to compile Sass and JavaScript assets.
+
+1. For development with automatic recompilation on file changes:
+```bash
+npm run watch
+```
+
+2. For a one-time development build:
+```bash
+npm run dev
+```
+
+3. For production-optimized assets with minification:
+```bash
+npm run production
+```
+
+**Expected Outcome:** Compiled assets are placed in `public/assets/dist/` with the following structure:
+- `js/app.js` - Main application JavaScript
+- `js/dependencies.js` - Third-party dependencies (Bootstrap)
+- `css/app.css` - Light theme styles
+- `css/app-dark.css` - Dark theme styles
+
+**Troubleshooting:** If you encounter Sass compilation errors, ensure you're using Node.js 22 LTS or higher. The `watch` command may need polling on some systems; use `npm run watch-poll` instead.
+
+## Import Bookmarks from HTML File
+
+LinkAce can import bookmarks from Netscape-format HTML files (compatible with most browsers).
+
+1. Place your bookmarks file in the storage directory or use an absolute path.
+
+2. Run the import command:
+```bash
+docker compose exec -it php php artisan links:import storage/bookmarks.html
+```
+
+3. When prompted, select the user who will own the imported bookmarks.
+
+4. To skip automatic title and description generation for faster imports:
+```bash
+docker compose exec -it php php artisan links:import storage/bookmarks.html --skip-meta-generation
+```
+
+**Expected Outcome:** The command displays the number of bookmarks queued for import and skipped (duplicates). All imported links are tagged with an import tag for easy identification.
+
+**Troubleshooting:** If the file cannot be read, ensure it's readable by the container. Relative paths are resolved from the `storage/` directory, while absolute paths starting with `/` are used as-is.
+
+## Check Links for Availability
+
+LinkAce can automatically check if saved links are still accessible or have moved.
+
+1. Manually trigger a link check:
+```bash
+docker compose exec -it php php artisan links:check
+```
+
+2. To check more than the default 20 links per user:
+```bash
+docker compose exec -it php php artisan links:check --limit=50
+```
+
+3. To disable the 1-second delay between checks (useful for testing):
+```bash
+docker compose exec -it php php artisan links:check --noWait
+```
+
+**Expected Outcome:** The command checks links that haven't been verified in the last 2 months, making HTTP HEAD requests to each URL. Links are marked as:
+- `OK` - Accessible (2xx status)
+- `MOVED` - Redirected (3xx status)
+- `BROKEN` - Unavailable (4xx/5xx status or connection error)
+
+Users receive email notifications if any links are moved or broken.
+
+**Troubleshooting:** The scheduled task runs every 2 hours automatically. The command only checks links starting with `http` and skips those with checking disabled. The 1-second delay prevents rate limiting by target servers.
+
+## Complete the Initial Setup
+
+If the automated setup process fails, you can manually mark the setup as complete.
+
+1. Run the setup completion command:
+```bash
+docker compose exec -it php php artisan setup:complete
+```
+
+2. Create your first admin user:
+```bash
+docker compose exec -it php php artisan registeruser --admin
+```
+
+**Expected Outcome:** The system settings are updated to mark setup as completed, allowing you to access the application.
+
+**Troubleshooting:** If the command fails with a database error, ensure migrations have been run with `php artisan migrate` and the database connection is properly configured in `.env`.
+
+## Run Database Migrations
+
+When updating LinkAce or setting up a fresh installation, you need to run database migrations.
+
+1. Run all pending migrations:
+```bash
+docker compose exec -it php php artisan migrate
+```
+
+2. To rollback the last migration batch:
+```bash
+docker compose exec -it php php artisan migrate:rollback
+```
+
+3. To reset and re-run all migrations (warning: destroys all data):
+```bash
+docker compose exec -it php php artisan migrate:fresh
+```
+
+**Expected Outcome:** The command creates or updates database tables according to the migration files in `database/migrations/`. Each migration is logged in the `migrations` table.
+
+**Troubleshooting:** If migrations fail, check that the database credentials in `.env` are correct and the database server is running. For development, both MariaDB (port 3306) and PostgreSQL (port 5432) are available.
+
+## Deploy to Production with Docker
+
+LinkAce provides a production-ready Docker Compose configuration.
+
+1. Copy the production compose file and create your environment file:
+```bash
+cp docker-compose.production.yml docker-compose.yml
+cp .env.example .env
+```
+
+2. Edit `.env` and configure:
+   - `APP_KEY` - Generate with `docker run --rm linkace/linkace php artisan key:generate --show`
+   - `DB_PASSWORD` - Set a secure database password
+   - `REDIS_PASSWORD` - Set a secure Redis password
+   - Mail settings (`MAIL_*` variables)
+
+3. Start the production stack:
+```bash
+docker compose up -d
+```
+
+4. The application will be accessible at `http://localhost:80`.
+
+**Expected Outcome:** LinkAce runs with MariaDB and Redis in separate containers. The application automatically runs migrations and starts the scheduler for background tasks.
+
+**Troubleshooting:** For HTTPS support, uncomment the port 443 mapping and volume mounts in `docker-compose.production.yml`, then provide an `ssl.Caddyfile` configuration. Backups can be stored by uncommenting the backups volume mount.

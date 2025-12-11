@@ -1,0 +1,560 @@
+---
+title: ENG - FAQ & Troubleshooting
+---
+
+{/* Build timestamp: 1765422107996 - Forces cache invalidation */}
+
+**Last Updated:** 12/11/2025
+
+---
+
+# ENG - FAQ & Troubleshooting
+
+This page provides answers to common questions and solutions to typical issues encountered when developing with LinkAce.
+
+## Frequently Asked Questions
+
+### Q: How do I set up LinkAce for local development?
+
+**A:** LinkAce uses Docker for development. Follow these steps:
+
+1. Clone the repository and copy the environment file:
+   ```bash
+   cp .env.dev .env
+   ```
+
+2. Start the Docker containers:
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Install PHP dependencies inside the container:
+   ```bash
+   docker compose exec -it php composer install
+   docker compose exec -it php php artisan key:generate
+   ```
+
+4. Install and compile frontend assets:
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+The application will be available at `http://localhost:80`.
+
+### Q: How do I register a new user for development?
+
+**A:** Use the `registeruser` Artisan command from within the PHP container:
+
+```bash
+docker compose exec -it php php artisan registeruser [username] [email]
+```
+
+For the first user (admin), use the `--admin` flag:
+
+```bash
+docker compose exec -it php php artisan registeruser --admin
+```
+
+You'll be prompted to enter a password interactively.
+
+### Q: What environment variables are required?
+
+**A:** Essential environment variables include:
+
+- **Application:**
+  - `APP_KEY` - Laravel application key (generate with `php artisan key:generate`)
+  - `APP_ENV` - Set to `local` for development
+  - `APP_DEBUG` - Set to `true` for development
+
+- **Database:**
+  - `DB_CONNECTION` - Database type (`mysql`, `pgsql`, or `sqlite`)
+  - `DB_HOST` - Database host (default: `db` for Docker)
+  - `DB_PORT` - Database port (3306 for MySQL, 5432 for PostgreSQL)
+  - `DB_DATABASE` - Database name
+  - `DB_USERNAME` - Database username
+  - `DB_PASSWORD` - Database password
+
+- **Redis:**
+  - `REDIS_HOST` - Redis host (default: `redis` for Docker)
+  - `REDIS_PASSWORD` - Redis password
+  - `REDIS_PORT` - Redis port (default: 6379)
+
+- **Mail (optional for development):**
+  - `MAIL_MAILER` - Mail driver (`smtp`, `log`, `array`)
+  - `MAIL_HOST` - SMTP host
+  - `MAIL_PORT` - SMTP port
+  - `MAIL_USERNAME` - SMTP username
+  - `MAIL_PASSWORD` - SMTP password
+
+See `.env.dev` for a complete development configuration example.
+
+### Q: How do I run tests?
+
+**A:** Run tests using Composer scripts inside the PHP container:
+
+```bash
+# Run linting
+docker compose exec -it php composer run lint
+
+# Run PHPUnit tests
+docker compose exec -it php composer run test
+```
+
+Tests use SQLite in-memory database and don't affect your development database.
+
+### Q: Which database systems are supported?
+
+**A:** LinkAce supports:
+- **MySQL/MariaDB** (recommended, default in Docker setup)
+- **PostgreSQL** (available via `pg-db` service in docker-compose.yml)
+- **SQLite** (used for testing)
+
+To switch databases, update `DB_CONNECTION` in your `.env` file and adjust related `DB_*` variables accordingly.
+
+### Q: How do I switch between MariaDB and PostgreSQL in development?
+
+**A:** 
+
+1. Stop the current containers:
+   ```bash
+   docker compose down
+   ```
+
+2. Update your `.env` file:
+   ```bash
+   # For PostgreSQL
+   DB_CONNECTION=pgsql
+   DB_HOST=pg-db
+   DB_PORT=5432
+   ```
+
+3. Restart containers and run migrations:
+   ```bash
+   docker compose up -d
+   docker compose exec -it php php artisan migrate:fresh
+   ```
+
+### Q: What Node.js version is required?
+
+**A:** LinkAce requires **Node.js 22 LTS** or higher. The project uses Laravel Mix for asset compilation with the following scripts:
+
+- `npm run dev` - Compile assets for development
+- `npm run watch` - Watch for changes and recompile
+- `npm run production` - Compile and minify for production
+
+### Q: Can I use Podman instead of Docker?
+
+**A:** Yes! Simply replace `docker` with `podman` in all commands. You'll also need `podman-compose` installed:
+
+```bash
+# Install podman-compose (Ubuntu/Debian)
+apt install podman-compose
+
+# Then use it like docker-compose
+podman-compose up -d
+```
+
+### Q: How do I access the database directly?
+
+**A:** Database ports are exposed on localhost:
+
+**For MariaDB:**
+```bash
+mysql -h 127.0.0.1 -P 3306 -u linkace -p
+# Password from DB_PASSWORD in .env
+```
+
+**For PostgreSQL:**
+```bash
+psql -h 127.0.0.1 -p 5432 -U linkace -d linkace
+# Password from DB_PASSWORD in .env
+```
+
+### Q: What is Buggregator and how do I use it?
+
+**A:** Buggregator is a debugging server included in the development setup. It captures:
+- Emails (SMTP on port 1025)
+- Logs (Socket on port 9913)
+- Dumps (on port 9912)
+- Sentry events (on port 23517)
+
+Access the Buggregator web interface at `http://localhost:8000`.
+
+### Q: How do I complete the initial setup if it fails?
+
+**A:** If the automatic setup doesn't complete, use the `setup:complete` command:
+
+```bash
+docker compose exec -it php php artisan setup:complete
+```
+
+Then create your first admin user:
+
+```bash
+docker compose exec -it php php artisan registeruser --admin
+```
+
+### Q: What scheduled tasks does LinkAce run?
+
+**A:** LinkAce schedules the following tasks (see `app/Console/Kernel.php`):
+
+- **Queue worker** - Runs continuously to process jobs
+- **Link checker** - Runs every 2 hours to verify link availability
+- **Backup cleanup** - Runs daily at configured time (default: 01:00)
+- **Backup creation** - Runs daily at configured time (default: 02:00)
+
+In production, ensure the Laravel scheduler is running via cron or supervisor.
+
+### Q: How do I configure backups?
+
+**A:** Backup configuration is in `config/backup.php`. Key settings:
+
+- `BACKUP_ENABLED` - Enable/disable backups (default: true)
+- `BACKUP_DISK` - Storage disk for backups (default: `local_backups`)
+- `BACKUP_CLEAN_HOUR` - Time to clean old backups (default: 01:00)
+- `BACKUP_RUN_HOUR` - Time to create backups (default: 02:00)
+- `BACKUP_ARCHIVE_PASSWORD` - Optional password for backup archives
+
+For S3-compatible storage, configure AWS credentials in your `.env`:
+```bash
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
+AWS_DEFAULT_REGION=us-east-1
+AWS_BUCKET=your-bucket
+BACKUP_DISK=s3
+```
+
+### Q: How do I enable SSO/OAuth authentication?
+
+**A:** LinkAce supports multiple SSO providers. To enable one:
+
+1. Set the provider-specific environment variables in `.env`:
+   ```bash
+   # Example for Google OAuth
+   SSO_GOOGLE_ENABLED=true
+   SSO_GOOGLE_CLIENT_ID=your-client-id
+   SSO_GOOGLE_CLIENT_SECRET=your-client-secret
+   ```
+
+2. Supported providers (see `config/services.php`):
+   - Auth0 (`SSO_AUTH0_*`)
+   - Authentik (`SSO_AUTHENTIK_*`)
+   - Azure (`SSO_AZURE_*`)
+   - Cognito (`SSO_COGNITO_*`)
+   - FusionAuth (`SSO_FUSIONAUTH_*`)
+   - Google (`SSO_GOOGLE_*`)
+   - GitHub (`SSO_GITHUB_*`)
+   - GitLab (`SSO_GITLAB_*`)
+   - Keycloak (`SSO_KEYCLOAK_*`)
+   - OIDC Generic (`SSO_OIDC_*`)
+   - Okta (`SSO_OKTA_*`)
+   - Zitadel (`SSO_ZITADEL_*`)
+
+### Q: Where are the logs stored?
+
+**A:** Logs are stored in `storage/logs/`. In development with Docker, view logs using:
+
+```bash
+# Application logs
+docker compose logs -f php
+
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f db
+```
+
+Laravel logs are configured in `config/logging.php`. Development uses socket logging to Buggregator by default.
+
+### Q: How do I contribute to LinkAce?
+
+**A:** See `CONTRIBUTING.md` for detailed guidelines:
+
+1. Open an issue first to discuss your idea
+2. Fork and create a branch from the appropriate version branch (`2.x`)
+3. Make your changes and reference the issue in commits
+4. Run linting and tests before submitting
+5. Open a pull request with a clear description
+
+**Note:** Translation contributions should be made via [Crowdin](https://crowdin.com/project/linkace), not pull requests.
+
+## Common Errors
+
+### Error: "No such service: php"
+
+**Symptom:** When running `docker compose exec php` commands, you get "ERROR: No such service: php"
+
+**Cause:** You're using an older docker-compose.yml format or the service name has changed.
+
+**Solution:** 
+- Ensure you're in the correct directory with `docker-compose.yml`
+- Check the service name in your `docker-compose.yml` file (should be `php`)
+- Try `docker compose ps` to see available services
+- Pull the latest changes if using an old version
+
+### Error: "Database could not be configured"
+
+**Symptom:** Setup fails with database connection error
+
+**Causes:**
+1. Database container not ready when app starts
+2. Mismatched passwords between `.env` and database
+3. Database volume corruption
+
+**Solutions:**
+
+1. Wait for database to initialize (first start takes longer):
+   ```bash
+   docker compose logs -f db
+   # Wait until you see "ready for connections"
+   ```
+
+2. Verify credentials match:
+   ```bash
+   # Check .env DB_PASSWORD matches docker-compose.yml MYSQL_PASSWORD
+   grep DB_PASSWORD .env
+   ```
+
+3. Reset database volume:
+   ```bash
+   docker compose down -v
+   docker compose up -d
+   ```
+
+### Error: "Permission denied" on storage directories
+
+**Symptom:** Application errors related to writing logs, cache, or sessions
+
+**Cause:** Incorrect permissions on `storage/` or `bootstrap/cache/` directories
+
+**Solution:**
+
+For Docker:
+```bash
+# The www-data user needs write access
+docker compose exec -it php chown -R www-data:www-data storage bootstrap/cache
+docker compose exec -it php chmod -R 775 storage bootstrap/cache
+```
+
+For non-Docker:
+```bash
+chmod -R 775 storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache
+# Or your web server user instead of www-data
+```
+
+### Error: "Class 'Redis' not found"
+
+**Symptom:** Application crashes with Redis class not found
+
+**Cause:** Redis PHP extension not installed or Redis server not running
+
+**Solution:**
+
+For Docker (should be included):
+```bash
+# Check if Redis is running
+docker compose ps redis
+
+# Restart Redis
+docker compose restart redis
+```
+
+For non-Docker:
+```bash
+# Install PHP Redis extension
+apt-get install php-redis
+# or
+pecl install redis
+```
+
+Or switch to file-based cache in `.env`:
+```bash
+CACHE_DRIVER=file
+SESSION_DRIVER=file
+```
+
+### Error: "419 Page Expired" on form submission
+
+**Symptom:** Forms fail with 419 error
+
+**Cause:** Missing or invalid `APP_KEY`
+
+**Solution:**
+```bash
+docker compose exec -it php php artisan key:generate
+# Then restart the application
+docker compose restart
+```
+
+### Error: Assets not loading (404 errors)
+
+**Symptom:** CSS/JS files return 404 errors
+
+**Cause:** Assets not compiled or not published
+
+**Solution:**
+```bash
+# Compile assets
+npm install
+npm run dev
+
+# For production
+npm run production
+
+# Ensure storage link exists
+docker compose exec -it php php artisan storage:link
+```
+
+### Error: "SQLSTATE[HY000] [2002] Connection refused"
+
+**Symptom:** Cannot connect to database
+
+**Cause:** Wrong host or database not running
+
+**Solution:**
+
+1. Check database container status:
+   ```bash
+   docker compose ps db
+   ```
+
+2. Verify `DB_HOST` in `.env`:
+   - For Docker: should be `db` (service name)
+   - For local: should be `127.0.0.1` or `localhost`
+
+3. Check port is correct:
+   - MySQL/MariaDB: 3306
+   - PostgreSQL: 5432
+
+### Error: "Composer dependencies out of date"
+
+**Symptom:** Application fails to start with autoload errors
+
+**Cause:** Composer dependencies need updating
+
+**Solution:**
+```bash
+docker compose exec -it php composer install
+# Or if lock file needs updating
+docker compose exec -it php composer update
+```
+
+### Error: "Mix manifest not found"
+
+**Symptom:** Application crashes looking for mix-manifest.json
+
+**Cause:** Frontend assets not compiled
+
+**Solution:**
+```bash
+npm install
+npm run dev
+# Ensure public/assets/dist/ directory exists and contains compiled files
+```
+
+### Error: Mail sending fails in development
+
+**Symptom:** Email-related features don't work
+
+**Cause:** Mail configuration not set up
+
+**Solution:**
+
+For development, use the log driver or Buggregator:
+```bash
+# In .env
+MAIL_MAILER=smtp
+MAIL_HOST=buggregator
+MAIL_PORT=1025
+```
+
+Or use log driver to write emails to logs:
+```bash
+MAIL_MAILER=log
+```
+
+View emails in Buggregator at `http://localhost:8000`.
+
+### Error: "Setup already completed" when trying to run setup
+
+**Symptom:** Cannot access setup wizard
+
+**Cause:** Setup was already marked as complete
+
+**Solution:**
+
+Reset setup status in database or via settings:
+```bash
+docker compose exec -it php php artisan tinker
+# Then run:
+# SystemSettings::fake(['setup_completed' => false]);
+```
+
+Or directly in database:
+```sql
+UPDATE settings SET payload = '{"setup_completed":false}' WHERE group = 'system';
+```
+
+### Test Failures
+
+**Symptom:** Tests fail unexpectedly
+
+**Common causes and solutions:**
+
+1. **Database not clean:**
+   ```bash
+   # Tests use SQLite, ensure testing database is fresh
+   rm -f database/testing.sqlite
+   touch database/testing.sqlite
+   ```
+
+2. **Cache issues:**
+   ```bash
+   docker compose exec -it php php artisan config:clear
+   docker compose exec -it php php artisan cache:clear
+   ```
+
+3. **Stray HTTP requests:**
+   - Tests use `Http::preventStrayRequests()` by default
+   - Mock external HTTP calls in tests with `Http::fake()`
+
+### Kubernetes/Helm Deployment Issues
+
+**Symptom:** Helm deployment fails or pods crash
+
+**Common solutions:**
+
+1. **Generate APP_KEY before deployment:**
+   ```bash
+   docker run --rm linkace/linkace php artisan key:generate --show
+   # Copy output to .env.k8s
+   ```
+
+2. **Change default passwords:**
+   - Update `DB_PASSWORD` in `.env.k8s`
+   - Update `REDIS_PASSWORD` in `.env.k8s`
+
+3. **Configure email settings:**
+   - Set valid SMTP credentials in `.env.k8s`
+   - Or use a mail service like Mailgun
+
+4. **Don't enable autoscaling with embedded database:**
+   - If `database.enabled=true`, keep `autoscaling.enabled=false`
+   - Use external database for autoscaling
+
+## Additional Resources
+
+- **Documentation:** https://www.linkace.org/docs/v2
+- **Community Discussions:** https://github.com/Kovah/LinkAce/discussions
+- **Issue Tracker:** https://github.com/Kovah/LinkAce/issues
+- **Crowdin Translations:** https://crowdin.com/project/linkace
+
+For issues not covered here, search the community discussions or open a new discussion with:
+- Your LinkAce version
+- Installation method (Docker/PHP)
+- Operating system
+- Complete error messages
+- Relevant log excerpts

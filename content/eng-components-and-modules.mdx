@@ -1,0 +1,444 @@
+---
+title: ENG - Components and Modules
+---
+
+{/* Build timestamp: 1765422107998 - Forces cache invalidation */}
+
+**Last Updated:** 12/11/2025
+
+---
+
+# Components & Modules Reference
+
+This document provides a comprehensive map of LinkAce's architecture, organized by logical layers. Use this guide to understand how components interact and where to find specific functionality.
+
+## Overview
+
+LinkAce is built on Laravel 10 and follows a structured architecture with clear separation of concerns:
+
+- **Domain Layer**: Core business models and repositories
+- **API Layer**: RESTful endpoints for external integrations
+- **Application Layer**: Web controllers and user-facing features
+- **Infrastructure Layer**: Jobs, commands, helpers, and system utilities
+- **Configuration Layer**: Settings management and policies
+
+---
+
+## Domain Layer
+
+### Core Models
+
+The domain models represent the primary entities in LinkAce's bookmark management system.
+
+| Model | Purpose | Key Relationships | Key Features |
+|-------|---------|------------------|--------------|
+| **Link** | Represents a bookmarked URL with metadata | `belongsTo` User, `belongsToMany` Tags/Lists, `hasMany` Notes | Status tracking (OK/Moved/Broken), visibility scopes, duplicate detection, Internet Archive integration |
+| **LinkList** | Organizes links into collections | `belongsTo` User, `belongsToMany` Links | Markdown description support, visibility controls, soft deletes |
+| **Tag** | Categorizes links with labels | `belongsTo` User, `belongsToMany` Links | Auto-sorted by name, visibility scopes, soft deletes |
+| **Note** | Adds annotations to links | `belongsTo` User/Link | Markdown support, visibility controls, formatted timestamps |
+| **User** | System users with authentication | `hasMany` Links | SSO support, two-factor auth, role-based permissions, blocking capability |
+
+**Location**: `app/Models/`
+
+**Key Traits**:
+- `ScopesForUser`: Filters entities by user ownership
+- `ScopesVisibility`: Filters by public/internal/private visibility
+- `ProvidesTaxonomyOutput`: Shared output formatting for tags and lists
+
+### Repositories
+
+Repositories handle complex business logic and data persistence operations.
+
+| Repository | Purpose | Key Methods |
+|------------|---------|-------------|
+| **LinkRepository** | Link CRUD with metadata enrichment | `create()`, `update()`, `bulkUpdate()`, `delete()`, `processLinkTaxonomies()` |
+| **TagRepository** | Tag management operations | CRUD operations, bulk updates |
+| **ListRepository** | List management operations | CRUD operations, bulk updates |
+| **NoteRepository** | Note management operations | CRUD operations |
+| **TrashRepository** | Soft-deleted entity recovery | `getLinks()`, `getTags()`, `getLists()`, `clear()`, `restore()` |
+
+**Location**: `app/Repositories/`
+
+**Key Features**:
+- Automatic title/description fetching from URLs
+- Link icon mapping based on URL patterns
+- Taxonomy (tags/lists) processing with auto-creation
+- Audit trail generation for relationship changes
+- Internet Archive backup triggering
+
+---
+
+## API Layer
+
+### REST API Endpoints
+
+LinkAce provides a comprehensive REST API (v2) accessible at `/api/v2/*`.
+
+**Authentication**: Laravel Sanctum token-based authentication  
+**Rate Limiting**: Configurable via `app.api_rate_limit`  
+**Location**: `routes/api.php`, `app/Http/Controllers/API/`
+
+| Controller | Endpoints | Purpose |
+|------------|-----------|---------|
+| **LinkController** | `GET/POST/PATCH/DELETE /links` | Full CRUD for links |
+| **LinkCheckController** | `GET /links/check` | Retrieve link health status |
+| **LinkNotesController** | `GET /links/{link}/notes` | Get all notes for a link |
+| **ListController** | `GET/POST/PATCH/DELETE /lists` | Full CRUD for lists |
+| **ListLinksController** | `GET /lists/{list}/links` | Get all links in a list |
+| **TagController** | `GET/POST/PATCH/DELETE /tags` | Full CRUD for tags |
+| **TagLinksController** | `GET /tags/{tag}/links` | Get all links with a tag |
+| **NoteController** | `POST/PATCH/DELETE /notes` | CRUD for notes (no index/show) |
+| **SearchController** | `GET /search/{links,tags,lists}` | Search across entities |
+| **BulkStoreController** | `POST /bulk/{links,lists,tags}` | Bulk creation operations |
+| **BulkEditController** | `PATCH /bulk/{links,lists,tags}`, `DELETE /bulk/delete` | Bulk update/delete operations |
+| **TrashController** | `GET /trash/{links,lists,tags,notes}`, `DELETE /trash/clear`, `PATCH /trash/restore` | Trash management |
+
+**OpenAPI Specification**: Available at `openapi.json`
+
+---
+
+## Application Layer
+
+### Web Controllers
+
+Web controllers handle user-facing HTTP requests and return views.
+
+**Location**: `app/Http/Controllers/`
+
+#### Model Controllers
+
+| Controller | Routes | Purpose |
+|------------|--------|---------|
+| **LinkController** | `/links/*` | Web UI for link management, includes `toggleCheck()`, `markWorking()` |
+| **ListController** | `/lists/*` | Web UI for list management |
+| **TagController** | `/tags/*` | Web UI for tag management |
+| **NoteController** | `/notes/*` | Web UI for note management |
+| **UserController** | `/users/{user:name}` | Public user profile display |
+| **BulkEditController** | `/bulk-edit/*` | Bulk operations interface |
+
+#### Application Features
+
+| Controller | Routes | Purpose |
+|------------|--------|---------|
+| **DashboardController** | `/dashboard` | User dashboard with statistics |
+| **SearchController** | `/search` | Advanced search interface |
+| **ImportController** | `/import`, `/import/queue` | HTML/Netscape bookmark import |
+| **ExportController** | `/export`, `/export/{html,csv}` | Export bookmarks |
+| **TrashController** | `/trash` | Soft-deleted items management |
+| **FeedController** | `/links/feed`, `/lists/feed`, `/tags/feed` | RSS feed generation |
+| **BookmarkletController** | `/bookmarklet/*` | Browser bookmarklet interface |
+
+#### Admin Controllers
+
+| Controller | Routes | Purpose |
+|------------|--------|---------|
+| **SystemSettingsController** | `/settings/system` | System-wide configuration |
+| **UserManagementController** | `/system/users/*` | User CRUD, blocking, invitations |
+| **AdminApiTokenController** | `/system/api-tokens/*` | Admin API token management |
+| **AuditController** | `/system/audit` | System audit log viewer |
+
+#### Guest Access
+
+| Controller | Routes | Purpose |
+|------------|--------|---------|
+| **GuestLinkController** | `/guest/links` | Public link browsing |
+| **GuestListController** | `/guest/lists` | Public list browsing |
+| **GuestTagController** | `/guest/tags` | Public tag browsing |
+| **GuestUserController** | `/guest/users/{user}` | Public user profiles |
+| **GuestFeedController** | `/guest/*/feed` | Public RSS feeds |
+
+**Middleware**: `GuestAccess` middleware checks `guest_access_enabled` system setting
+
+### Authentication
+
+**Location**: `app/Http/Controllers/`, `app/Actions/Fortify/`
+
+| Component | Purpose |
+|-----------|---------|
+| **FortifyServiceProvider** | Configures Laravel Fortify for authentication |
+| **SocialiteController** | Handles OAuth/OIDC SSO login (Auth0, Keycloak, Azure AD, Okta, etc.) |
+| **RegistrationController** | User registration and invitation acceptance |
+
+**Supported SSO Providers**: Auth0, Authentik, AWS Cognito, FusionAuth, Keycloak, Microsoft Azure, Okta, OIDC (generic), Zitadel
+
+---
+
+## Infrastructure Layer
+
+### Jobs (Async Tasks)
+
+Background jobs for time-consuming operations.
+
+**Location**: `app/Jobs/`
+
+| Job | Trigger | Purpose |
+|-----|---------|---------|
+| **ImportLinkJob** | Import process | Processes individual links during HTML import with delay |
+| **SaveLinkToWaybackmachine** | Link creation/update | Sends link to Internet Archive for archival |
+
+**Queue Configuration**: Uses Laravel queue system (database, Redis, etc.)
+
+### Console Commands
+
+CLI commands for maintenance and administration.
+
+**Location**: `app/Console/Commands/`
+
+| Command | Signature | Purpose |
+|---------|-----------|---------|
+| **CheckLinksCommand** | `links:check` | Checks link availability (HTTP status), sends notifications for broken/moved links |
+| **ImportCommand** | `import` | Import bookmarks from CLI |
+| **RegisterUserCommand** | `register:user` | Create new user from CLI |
+| **ResetPasswordCommand** | `reset:password` | Reset user password from CLI |
+| **ListUsersCommand** | `list:users` | List all users |
+| **CompleteSetupCommand** | `setup:complete` | Mark setup as completed |
+| **CheckMailCommand** | `check:mail` | Verify email configuration |
+| **UpdateLinkThumbnails** | `links:update-thumbnails` | Regenerate link thumbnails |
+| **ViewRecoveryCodesCommand** | `2fa:recovery-codes` | View 2FA recovery codes |
+
+**Scheduling**: Configure via `app/Console/Kernel.php` or cron with `/cron/{token}` endpoint
+
+### Helper Classes
+
+Utility classes for common operations.
+
+**Location**: `app/Helper/`
+
+| Helper | Purpose | Key Methods |
+|--------|---------|-------------|
+| **HtmlMeta** | Extracts metadata from URLs | `getFromUrl()` - fetches title, description, thumbnail from web pages |
+| **LinkIconMapper** | Maps URLs to appropriate icons | `getIconForUrl()` - determines icon based on URL pattern |
+| **WaybackMachine** | Internet Archive integration | `saveToArchive()`, `getArchiveLink()` |
+| **Sharing** | Social sharing link generation | `getShareLink()` - generates share URLs for various platforms |
+| **UpdateHelper** | Version update checking | Checks for new LinkAce releases |
+
+**Global Functions**: `app/Helper/functions.php` provides helpers like:
+- `usersettings()`, `systemsettings()`, `guestsettings()` - Settings access
+- `formatDateTime()` - Timezone-aware date formatting
+- `getPaginationLimit()` - Context-aware pagination
+- `linkTarget()` - Link target attribute generation
+- `bookmarkletUrl()` - Bookmarklet code generation
+- `setupHttpRequest()` - HTTP client with random user agent
+
+---
+
+## Configuration Layer
+
+### Settings Management
+
+LinkAce uses `spatie/laravel-settings` for persistent configuration.
+
+**Location**: `app/Settings/`
+
+| Settings Class | Scope | Key Properties |
+|----------------|-------|----------------|
+| **SystemSettings** | Application-wide | `page_title`, `logo_text`, `cron_token`, `guest_access_enabled`, `contact_page_*`, `custom_header_content` |
+| **UserSettings** | Per-user | `timezone`, `locale`, `date_format`, `*_default_visibility`, `archive_backups_enabled`, `listitem_count`, `darkmode_setting`, `link_display_mode`, `share_*` (social platforms) |
+| **GuestSettings** | Guest users | Similar to UserSettings but for unauthenticated access |
+
+**Access**: Use helper functions `systemsettings('key')`, `usersettings('key')`, `guestsettings('key')`
+
+### Policies (Authorization)
+
+Laravel policies enforce access control.
+
+**Location**: `app/Policies/`
+
+| Policy | Model | Key Rules |
+|--------|-------|-----------|
+| **LinkPolicy** | Link | Users can only view/edit/delete their own links (or public/internal based on visibility) |
+| **LinkListPolicy** | LinkList | Users can only manage their own lists |
+| **TagPolicy** | Tag | Users can only manage their own tags |
+| **NotePolicy** | Note | Users can only manage their own notes |
+| **ApiTokenPolicy** | PersonalAccessToken | Users can only manage their own API tokens |
+
+**Role-Based Access**: Admin role grants additional permissions (user management, system settings)
+
+### Enums
+
+Type-safe constants for domain concepts.
+
+**Location**: `app/Enums/`
+
+| Enum | Purpose | Values |
+|------|---------|--------|
+| **ModelAttribute** | Visibility levels | `VISIBILITY_PRIVATE`, `VISIBILITY_INTERNAL`, `VISIBILITY_PUBLIC` |
+| **Role** | User roles | `ADMIN`, `USER` |
+| **Permission** | Fine-grained permissions | Various permissions for role-based access |
+| **ActivityLog** | Audit event types | Event type constants for activity logging |
+| **ApiToken** | API token types | Token type classifications |
+
+---
+
+## Middleware
+
+Request processing pipeline components.
+
+**Location**: `app/Http/Middleware/`
+
+| Middleware | Purpose | Applied To |
+|------------|---------|------------|
+| **SetupCheckMiddleware** | Redirects to setup if not completed | All routes except setup |
+| **GuestAccess** | Validates guest access is enabled | `/guest/*` routes |
+| **SettingsMiddleware** | Loads user/guest settings into context | All authenticated routes |
+| **ApiHeaderValidationMiddleware** | Validates API request headers | API routes |
+| **BookmarkRedirectMiddleware** | Redirects bookmarklet requests | Bookmarklet routes |
+
+---
+
+## Actions
+
+Complex business operations encapsulated as action classes.
+
+**Location**: `app/Actions/`
+
+| Action | Purpose | Key Methods |
+|--------|---------|-------------|
+| **ImportHtmlBookmarks** | Processes HTML/Netscape bookmark files | `run()` - parses file and queues ImportLinkJob for each link |
+| **Settings/UpdateUserSettings** | Updates user preferences | Fortify action for settings updates |
+
+---
+
+## Audit & Activity Tracking
+
+LinkAce uses `owen-it/laravel-auditing` for comprehensive audit trails.
+
+**Audited Models**: Link, LinkList, Tag, User
+
+**Custom Audit Events**:
+- `Link::AUDIT_RELATION_EVENT` - Tracks tag/list relationship changes
+- `User::AUDIT_BLOCK_EVENT` / `AUDIT_UNBLOCK_EVENT` - User blocking actions
+
+**Audit Modifiers** (custom formatting):
+- **VisibilityModifier**: Converts visibility integers to human-readable labels
+- **BooleanModifier**: Formats boolean values
+- **LinkStatusModifier**: Converts link status codes to labels
+- **TagRelationModifier**: Formats tag relationship changes
+- **ListRelationModifier**: Formats list relationship changes
+
+**Location**: `app/Audits/`, viewable via `/system/audit` (admin only)
+
+---
+
+## Key Dependencies
+
+Understanding external packages used:
+
+| Package | Purpose |
+|---------|---------|
+| **laravel/fortify** | Authentication scaffolding (login, 2FA, password reset) |
+| **laravel/sanctum** | API token authentication |
+| **laravel/socialite** | OAuth/SSO integration |
+| **spatie/laravel-settings** | Persistent settings management |
+| **spatie/laravel-permission** | Role and permission management |
+| **spatie/laravel-backup** | Database and file backups |
+| **spatie/laravel-activitylog** | Activity logging (separate from auditing) |
+| **owen-it/laravel-auditing** | Model change auditing |
+| **kovah/laravel-html-meta** | HTML metadata extraction |
+| **shaarli/netscape-bookmark-parser** | HTML bookmark file parsing |
+| **league/csv** | CSV export functionality |
+| **league/flysystem-*** | Cloud storage support (S3, FTP, SFTP) |
+
+---
+
+## Directory Structure Summary
+
+```
+app/
+├── Actions/              # Complex business operations
+├── Audits/               # Custom audit modifiers
+├── Console/              # CLI commands
+│   └── Commands/
+├── Enums/                # Type-safe constants
+├── Exceptions/           # Custom exception handlers
+├── Helper/               # Utility classes and functions
+├── Http/                 # Web layer
+│   ├── Controllers/      # Request handlers
+│   │   ├── API/          # REST API controllers
+│   │   ├── Admin/        # Admin panel controllers
+│   │   ├── App/          # Main app controllers
+│   │   ├── Guest/        # Public access controllers
+│   │   ├── Models/       # Model-specific controllers
+│   │   └── Setup/        # Installation controllers
+│   ├── Middleware/       # Request/response filters
+│   └── Requests/         # Form request validation
+├── Jobs/                 # Queued background jobs
+├── Listeners/            # Event listeners
+├── Mail/                 # Email templates (Mailable classes)
+├── Models/               # Eloquent models
+├── Notifications/        # User notifications
+├── Policies/             # Authorization policies
+├── Providers/            # Service providers
+├── Repositories/         # Data access layer
+├── Rules/                # Custom validation rules
+├── Scopes/               # Global query scopes
+├── Settings/             # Settings classes
+└── View/                 # View composers and components
+```
+
+---
+
+## Integration Points
+
+### External Service Integration
+
+- **Internet Archive**: Automatic backup via `SaveLinkToWaybackmachine` job
+- **Social Sharing**: 20+ platforms supported (Twitter, Facebook, Reddit, etc.)
+- **SSO Providers**: OAuth/OIDC for enterprise authentication
+- **Zapier**: Official integration for 2500+ apps
+- **Cloud Storage**: S3-compatible backup destinations
+
+### API Integration
+
+- **REST API**: Full-featured v2 API at `/api/v2/*`
+- **RSS Feeds**: Per-user, per-list, and per-tag feeds
+- **Bookmarklet**: JavaScript-based quick-save tool
+- **Webhooks**: Via Zapier integration
+
+---
+
+## Development Patterns
+
+### Repository Pattern
+
+All complex data operations go through repositories, not directly through models. This centralizes business logic and makes testing easier.
+
+**Example**: `LinkRepository::create()` handles metadata fetching, icon mapping, taxonomy processing, and archive triggering.
+
+### Service Layer
+
+Helper classes act as services for cross-cutting concerns like HTTP requests, metadata extraction, and external API calls.
+
+### Policy-Based Authorization
+
+All model access is controlled via Laravel policies. Controllers use `$this->authorize()` to enforce permissions.
+
+### Event-Driven Audit
+
+Model changes trigger audit events automatically. Custom relationship changes use manual audit event dispatching.
+
+### Queue-Based Processing
+
+Time-intensive operations (imports, archive saves, link checks) are queued to prevent request timeouts.
+
+---
+
+## Testing
+
+**Location**: `tests/`
+
+**Test Command**: `composer test` (runs PHPUnit)
+
+**Coverage**: Test coverage report generated to `test-coverage.xml`
+
+**Linting**: `composer lint` (runs PHP_CodeSniffer)
+
+---
+
+## Next Steps
+
+- **API Documentation**: See `openapi.json` for full API specification
+- **Database Schema**: See `database/migrations/` for table structures
+- **Configuration**: See `config/` for application settings
+- **Localization**: See `lang/` for translation files
+- **Frontend Assets**: See `resources/` for views, CSS, and JavaScript
